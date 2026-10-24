@@ -12,6 +12,8 @@
 [![Tests](https://img.shields.io/badge/tests-10%2F10%20passing-brightgreen)](#-测试)
 [![Python](https://img.shields.io/badge/python-3.8%2B-blue)](#-快速开始)
 
+![封面](docs/cover-1024.png)
+
 ---
 
 ## ✨ 它能做什么
