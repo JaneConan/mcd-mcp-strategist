@@ -102,19 +102,16 @@ def draw_m_logo(d, x, y, s=34, color=GOLD):
            fill=color, width=wdt)
 
 
-def pixel_pill(img, x, y, text, final_size, pad_x=30, pad_y=14):
-    """深色金边 HUD 小面板 + 像素字。"""
+def stat_pill(img, x, y, text, size=26):
+    """麦当劳黄标签：金底 + 深红描边 + 墨色清晰粗体（小字号不用像素字，避免糊）。"""
     d = ImageDraw.Draw(img)
-    small = final_size // PIX
-    f = font(small, True)
-    tmp = Image.new("RGBA", (10, 10))
-    td = ImageDraw.Draw(tmp)
-    bbox = td.textbbox((0, 0), text, font=f)
+    f = font(size, True)
+    bbox = d.textbbox((0, 0), text, font=f)
     tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-    bw, bh = tw * PIX + pad_x * 2, th * PIX + pad_y * 2
-    d.rounded_rectangle([x, y, x + bw, y + bh], radius=10,
-                        fill=(22, 12, 14, 225), outline=(255, 205, 43, 200), width=2)
-    pixel_text(img, (x + pad_x, y + pad_y - 2), text, final_size, GOLD)
+    bw, bh = tw + 44, th + 26
+    d.rounded_rectangle([x, y, x + bw, y + bh], radius=8, fill=GOLD,
+                        outline=RED_DARK, width=2)
+    d.text((x + 22 - bbox[0], y + 13 - bbox[1]), text, font=f, fill=INK)
     return x + bw, y + bh
 
 
@@ -181,18 +178,18 @@ def main():
     d.text((82, 458), t2, font=f_tag, fill=CREAM)
     fit("标语2", d.textbbox((82, 458), t2, font=f_tag), tp)
 
-    # ============ 战绩胶囊（右上 2x2 HUD 面板） ============
+    # ============ 战绩标签（右上 2x2 麦当劳黄签） ============
     stats = ["立省", "官方核价分毫不差", "113 个真实餐品", "热量预算模式"]
     for i, t in enumerate(stats):
         col, row = i % 2, i // 2
-        ex, ey = pixel_pill(bg, 1004 + col * 292, 138 + row * 66, t, 26)
+        ex, ey = stat_pill(bg, 1004 + col * 292, 138 + row * 66, t)
         if ex > W - 8 or ey > H - 8:
-            ISSUES.append("胶囊%d 超出画布: (%d,%d)" % (i, ex, ey))
+            ISSUES.append("标签%d 超出画布: (%d,%d)" % (i, ex, ey))
 
-    # ============ CRT 屏幕叠字 ============
-    pixel_text(bg, (470, 690), "搭配完成", 34, (255, 130, 95),
+    # ============ CRT 屏幕叠字（48px 起步，保证笔画清晰） ============
+    pixel_text(bg, (448, 682), "搭配完成", 48, (255, 140, 100),
                stroke_fill=(60, 0, 6), bold=True)
-    pixel_text(bg, (1058, 715), "开饭!", 40, (120, 30, 10), bold=True)
+    pixel_text(bg, (1040, 706), "开饭!", 48, (120, 30, 10), bold=True)
 
     # ============ 面板 3：左下信息区 ============
     bp = [52, 1030, 830, 1152]
