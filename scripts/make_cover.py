@@ -164,7 +164,7 @@ def main():
               stroke=2, stroke_fill=(40, 6, 12))
 
     # ---- 战绩胶囊（像素风，右上角 2x2 悬浮面板） ----
-    stats = ["实测立省 ¥24.10", "官方核价分毫不差", "113 个真实餐品", "热量预算模式"]
+    stats = ["立省", "官方核价分毫不差", "113 个真实餐品", "热量预算模式"]
     for i, t in enumerate(stats):
         col, row = i % 2, i // 2
         pixel_pill(bg, 992 + col * 306, 142 + row * 66, t, 28)
