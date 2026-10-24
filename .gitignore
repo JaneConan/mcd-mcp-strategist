@@ -1,0 +1,11 @@
+# === 安全：本地配置与密钥绝不入库 ===
+mcp.json
+.env
+*.env
+__pycache__/
+*.pyc
+.DS_Store
+.idea/
+.vscode/
+*.log
+.workbuddy/

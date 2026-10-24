@@ -1,0 +1,32 @@
+{
+  "budget": 80.0,
+  "people": 2,
+  "delivery_fee": 0.0,
+  "items": [
+    {"code": "BIG_MAC", "name": "巨无霸", "category": "main", "price": 23.5, "kcal": 520, "tags": ["burger"]},
+    {"code": "MCCHICKEN", "name": "麦香鸡", "category": "main", "price": 12.5, "kcal": 400, "tags": ["burger"]},
+    {"code": "DOUBLE_BEEF", "name": "双层牛堡", "category": "main", "price": 19.5, "kcal": 480, "tags": ["burger"]},
+    {"code": "SPICY_CHICKEN_BURGER", "name": "麦辣鸡腿堡", "category": "main", "price": 21.0, "kcal": 510, "tags": ["burger", "spicy"]},
+    {"code": "FILLET_O_FISH", "name": "麦香鱼", "category": "main", "price": 18.0, "kcal": 390, "tags": ["burger", "fish"]},
+    {"code": "MCWINGS_2PC", "name": "麦乐鸡(2块)", "category": "side", "price": 11.5, "kcal": 230, "tags": ["chicken"]},
+    {"code": "FRIES_S", "name": "薯条(小)", "category": "side", "price": 8.5, "kcal": 230, "tags": ["fries"]},
+    {"code": "FRIES_M", "name": "薯条(中)", "category": "side", "price": 11.0, "kcal": 320, "tags": ["fries"]},
+    {"code": "FRIES_L", "name": "薯条(大)", "category": "side", "price": 13.5, "kcal": 430, "tags": ["fries"]},
+    {"code": "NUGGETS_4PC", "name": "麦乐鸡(4块)", "category": "side", "price": 12.0, "kcal": 190, "tags": ["chicken"]},
+    {"code": "COKE_S", "name": "可口可乐(小)", "category": "drink", "price": 7.0, "kcal": 140, "tags": ["drink"]},
+    {"code": "COKE_M", "name": "可口可乐(中)", "category": "drink", "price": 9.0, "kcal": 190, "tags": ["drink"]},
+    {"code": "SPRITE_M", "name": "雪碧(中)", "category": "drink", "price": 9.0, "kcal": 180, "tags": ["drink"]},
+    {"code": "MILKTEA_M", "name": "奶茶(中)", "category": "drink", "price": 12.0, "kcal": 220, "tags": ["drink"]},
+    {"code": "SUNDAE_STRAWBERRY", "name": "草莓新地", "category": "dessert", "price": 9.0, "kcal": 260, "tags": ["icecream"]},
+    {"code": "APPLE_PIE", "name": "苹果派", "category": "dessert", "price": 8.0, "kcal": 230, "tags": ["pie"]},
+    {"code": "EGG_TART", "name": "葡式蛋挞", "category": "dessert", "price": 9.5, "kcal": 250, "tags": ["pie"]}
+  ],
+  "coupons": [
+    {"id": "mm39_10", "name": "麦麦省·满39减10", "type": "threshold", "threshold": 39.0, "value": 10.0, "scope": "all", "stackable": false},
+    {"id": "mm59_18", "name": "麦麦省·满59减18", "type": "threshold", "threshold": 59.0, "value": 18.0, "scope": "all", "stackable": false},
+    {"id": "burger_off5", "name": "汉堡单品立减5元", "type": "item", "scope": ["BIG_MAC", "SPICY_CHICKEN_BURGER", "DOUBLE_BEEF"], "value": 5.0, "stackable": false},
+    {"id": "drink_85", "name": "饮品85折", "type": "percent", "scope": ["drink"], "value": 0.85, "stackable": false},
+    {"id": "free_delivery", "name": "免配送费", "type": "delivery", "value": 6.0, "stackable": false}
+  ],
+  "coupon_stacking": false
+}
