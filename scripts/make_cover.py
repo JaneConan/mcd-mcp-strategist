@@ -183,14 +183,29 @@ def main():
            font=font(32, True), fill=GOLD, stroke_width=2,
            stroke_fill=(40, 6, 12))
 
-    # ---- 右下：盖住 AI 水印 + 核验徽标 ----
-    d.rounded_rectangle([1160, 1096, W - 8, H - 8], radius=10,
-                        fill=(14, 6, 8, 235), outline=(255, 205, 43, 190), width=2)
-    f_ok = font(30, True)
-    txt = "全链路实测通过 · MCP 35 工具在线"
-    tw = d.textlength(txt, font=f_ok)
-    pixel_text(bg, (int(1160 + (W - 8 - 1160 - tw * 1) // 2), 1112), txt, 30,
-               GOLD, bold=True)
+    # ---- 右下：二维码卡片（盖住 AI 水印，扫码直达仓库） ----
+    try:
+        import qrcode
+        qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M,
+                           box_size=10, border=2)
+        qr.add_data("https://github.com/JaneConan/mcd-mcp-strategist")
+        qr.make(fit=True)
+        qr_img = qr.make_image(fill_color="#1a1014", back_color="white").convert("RGB")
+        qr_size = 150
+        qr_img = qr_img.resize((qr_size, qr_size), Image.NEAREST)
+        card = [1180, 1002, W - 8, H - 8]
+        d.rounded_rectangle(card, radius=14, fill=(255, 255, 255, 245),
+                            outline=GOLD, width=3)
+        bg.paste(qr_img, (card[0] + 22, card[1] + 20))
+        tx = card[0] + 22 + qr_size + 24
+        d.text((tx, card[1] + 24), "扫码访问仓库", font=font(30, True), fill=INK)
+        d.text((tx, card[1] + 68), "github.com/JaneConan/", font=font(26),
+               fill=(90, 40, 40))
+        d.text((tx, card[1] + 100), "mcd-mcp-strategist", font=font(26),
+               fill=(90, 40, 40))
+        d.text((tx, card[1] + 140), "Star 一下麦门军师", font=font(26, True), fill=RED)
+    except ImportError:
+        print("提示: pip install qrcode 后可生成右下角二维码")
 
     bg.convert("RGB").save(OUT_PNG, "PNG")
     bg.convert("RGB").save(OUT_JPG, "JPEG", quality=92)
