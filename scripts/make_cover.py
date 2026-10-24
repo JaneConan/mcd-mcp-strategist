@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-生成 1024 提交用作品封面 v3（1600x1200, 4:3）——像素复古风。
+生成 1024 提交用作品封面 v4（1600x1200, 4:3）——像素复古风。
 参考 WaytoAGI 1024 用餐赛道官方海报视觉语言：8-bit 像素背景 + CRT 电视 +
-手绘金色 M + 彩虹联名行；所有文字块都垫深色金边面板（游戏对话框风格），
-保证任何背景下文字都清晰。中文大字用小字号渲染后 NEAREST 放大得真像素锯齿。
+手绘金色 M + 彩虹联名行；所有文字块垫深色金边面板（游戏对话框风格）。
+中文大字用小字号渲染后 NEAREST 放大得真像素锯齿。
+内置溢出检测：每块文字与其所在面板边界比对，超出即报警。
 用法：python3 scripts/make_cover.py
 """
 import os
@@ -25,7 +26,7 @@ GOLD = (255, 205, 43)
 RED = (214, 32, 46)
 RED_DARK = (70, 6, 18)
 INK = (26, 16, 20)
-PANEL = (22, 12, 16, 236)     # 面板底
+PANEL = (22, 12, 16, 236)
 WHITE = (255, 255, 255)
 CREAM = (255, 240, 214)
 RAINBOW = [(238, 60, 60), (245, 150, 40), (250, 210, 60), (70, 190, 90),
@@ -34,15 +35,24 @@ RAINBOW = [(238, 60, 60), (245, 150, 40), (250, 210, 60), (70, 190, 90),
 FONT_W3 = "/System/Library/Fonts/Hiragino Sans GB.ttc"
 FONT_W6 = "/System/Library/Fonts/Hiragino Sans GB.ttc"
 
+ISSUES = []  # 溢出告警收集
+
 
 def font(size, bold=False):
     return ImageFont.truetype(FONT_W6 if bold else FONT_W3, size,
                               index=2 if bold else 0)
 
 
+def fit(name, bbox, box):
+    """文字 bbox 必须完整落在面板 box 内，否则记一条告警。"""
+    if (bbox[0] < box[0] - 1 or bbox[1] < box[1] - 1
+            or bbox[2] > box[2] + 1 or bbox[3] > box[3] + 1):
+        ISSUES.append("%s: 文字%s 超出面板%s" % (name, bbox, box))
+
+
 def pixel_text(img, pos, text, final_size, fill, stroke_fill=None,
                bold=True, scale=PIX, stroke_w=2, spacing=0):
-    """小字号渲染后 NEAREST 放大，得到 8-bit 像素文字。spacing 为字间距(最终像素)。"""
+    """小字号渲染后 NEAREST 放大，得到 8-bit 像素文字。返回粘贴后的 (w, h)。"""
     small = final_size // scale
     f = font(small, bold)
     sw = stroke_w if stroke_fill else 0
@@ -50,14 +60,14 @@ def pixel_text(img, pos, text, final_size, fill, stroke_fill=None,
     td = ImageDraw.Draw(tmp)
     bbox = td.textbbox((0, 0), text, font=f, stroke_width=sw)
     if spacing:
-        w = td.textlength(text, font=f) + spacing * (len(text) - 1)
+        w = td.textlength(text, font=f) + spacing * (len(text) - 1) / scale
         layer = Image.new("RGBA", (int(w) + 24, bbox[3] - bbox[1] + 24), (0, 0, 0, 0))
         ld = ImageDraw.Draw(layer)
         x = 12 - bbox[0]
         for ch in text:
             ld.text((x, 12 - bbox[1]), ch, font=f, fill=fill,
                     stroke_width=sw, stroke_fill=stroke_fill or fill)
-            x += ld.textlength(ch, font=f) + spacing
+            x += ld.textlength(ch, font=f) + spacing / scale
     else:
         layer = Image.new("RGBA", (bbox[2] - bbox[0] + 24, bbox[3] - bbox[1] + 24),
                           (0, 0, 0, 0))
@@ -65,7 +75,9 @@ def pixel_text(img, pos, text, final_size, fill, stroke_fill=None,
         ld.text((12 - bbox[0], 12 - bbox[1]), text, font=f, fill=fill,
                 stroke_width=sw, stroke_fill=stroke_fill or fill)
     big = layer.resize((layer.width * scale, layer.height * scale), Image.NEAREST)
-    img.paste(big, pos, big)
+    if img is not None:
+        img.paste(big, pos, big)
+    return big.width, big.height
 
 
 def draw_text(d, xy, s, f, fill, stroke=0, stroke_fill=None):
@@ -90,8 +102,8 @@ def draw_m_logo(d, x, y, s=34, color=GOLD):
            fill=color, width=wdt)
 
 
-def pixel_pill(img, x, y, text, final_size, pad_x=30, pad_y=14,
-               bg=(22, 12, 14, 225), outline=(255, 205, 43, 200), fill=GOLD):
+def pixel_pill(img, x, y, text, final_size, pad_x=30, pad_y=14):
+    """深色金边 HUD 小面板 + 像素字。"""
     d = ImageDraw.Draw(img)
     small = final_size // PIX
     f = font(small, True)
@@ -100,10 +112,9 @@ def pixel_pill(img, x, y, text, final_size, pad_x=30, pad_y=14,
     bbox = td.textbbox((0, 0), text, font=f)
     tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
     bw, bh = tw * PIX + pad_x * 2, th * PIX + pad_y * 2
-    d.rounded_rectangle([x, y, x + bw, y + bh], radius=10, fill=bg,
-                        outline=outline, width=2)
-    pixel_text(img, (x + pad_x, y + pad_y - 2), text, final_size, fill,
-               stroke_fill=None, bold=True)
+    d.rounded_rectangle([x, y, x + bw, y + bh], radius=10,
+                        fill=(22, 12, 14, 225), outline=(255, 205, 43, 200), width=2)
+    pixel_text(img, (x + pad_x, y + pad_y - 2), text, final_size, GOLD)
     return x + bw, y + bh
 
 
@@ -118,15 +129,16 @@ def main():
     shade = Image.new("L", (W, H), 0)
     sd = ImageDraw.Draw(shade)
     for y in range(H):
-        top = max(0, int(170 * (1 - y / 470.0) ** 1.4)) if y < 470 else 0
-        bot = max(0, int(190 * ((y - 880) / 320.0) ** 1.4)) if y > 880 else 0
+        top = max(0, int(170 * max(0.0, 1 - y / 470.0) ** 1.4)) if y < 470 else 0
+        bot = max(0, int(190 * max(0.0, (y - 880) / 320.0) ** 1.4)) if y > 880 else 0
         sd.line([(0, y), (W, y)], fill=max(top, bot))
     dark = Image.new("RGBA", (W, H), (18, 8, 12, 255))
     bg = Image.composite(dark, bg, shade).convert("RGBA")
     d = ImageDraw.Draw(bg)
 
     # ============ 面板 1：顶部联名横条 ============
-    panel(d, [52, 34, W - 52, 100], radius=12)
+    bar = [52, 34, W - 52, 100]
+    panel(d, bar, radius=12)
     f_brand = font(30, bold=True)
     x, y = 76, 52
     for i, ch in enumerate("WaytoAGI"):
@@ -141,28 +153,41 @@ def main():
     draw_m_logo(d, x, y - 4, 34)
     x += 34 * 2 + 12
     d.text((x, y), "麦当劳 MCP", font=f_brand, fill=GOLD)
+    brand_end = x + d.textlength("麦当劳 MCP", font=f_brand)
+    fit("联名行", (76, y, brand_end, y + 40), bar)
     # 右上角赛事信息
-    f_evt = font(26)
+    f_evt = font(24)
     txt = "AI切磋大会 · 1024 超能 Coding 周末 · 用餐赛道"
-    d.text((W - 76 - d.textlength(txt, font=f_evt), y + 4), txt,
-           font=f_evt, fill=(255, 235, 200, 235))
+    evt_w = d.textlength(txt, font=f_evt)
+    d.text((W - 76 - evt_w, y + 6), txt, font=f_evt, fill=(255, 235, 200, 235))
+    fit("赛事条", (W - 76 - evt_w, y, W - 76, y + 36), bar)
 
-    # ============ 面板 2：标题区（大对话框） ============
-    panel(d, [52, 116, 992, 474], radius=16)
-    pixel_text(bg, (74, 132), "麦门军师", 176, GOLD, stroke_fill=RED_DARK,
-               bold=True, stroke_w=2, spacing=6)
-    for i in range(0, 520, 16):                       # 像素金线
-        d.rectangle([82 + i, 344, 82 + i + 10, 352], fill=GOLD)
-    d.text((84, 368), "MaiStrategist", font=font(40, True), fill=WHITE)
-    f_tag = font(32)
-    draw_text(d, (84, 424), "说句话的功夫，AI 替你领券、凑单、", f_tag, CREAM)
-    draw_text(d, (84, 460), "薅出神之一单——官方核价", f_tag, CREAM)
+    # ============ 面板 2：标题大对话框 ============
+    tp = [52, 108, 880, 514]
+    panel(d, tp, radius=16)
+    tw_, th_ = pixel_text(bg, (74, 122), "麦门军师", 160, GOLD,
+                          stroke_fill=RED_DARK, bold=True, stroke_w=2, spacing=6)
+    fit("大标题", (74, 122, 74 + tw_, 122 + th_), tp)
+    for i in range(0, 500, 16):                       # 像素金线
+        d.rectangle([82 + i, 340, 82 + i + 10, 348], fill=GOLD)
+    d.text((82, 362), "MaiStrategist", font=font(34, True), fill=WHITE)
+    bb = d.textbbox((82, 362), "MaiStrategist", font=font(34, True))
+    fit("英文名", bb, tp)
+    f_tag = font(30)
+    t1 = "说句话的功夫，AI 替你领券、凑单、"
+    t2 = "薅出神之一单——官方核价，闭眼冲"
+    d.text((82, 418), t1, font=f_tag, fill=CREAM)
+    fit("标语1", d.textbbox((82, 418), t1, font=f_tag), tp)
+    d.text((82, 458), t2, font=f_tag, fill=CREAM)
+    fit("标语2", d.textbbox((82, 458), t2, font=f_tag), tp)
 
     # ============ 战绩胶囊（右上 2x2 HUD 面板） ============
     stats = ["立省", "官方核价分毫不差", "113 个真实餐品", "热量预算模式"]
     for i, t in enumerate(stats):
         col, row = i % 2, i // 2
-        pixel_pill(bg, 1004 + col * 292, 138 + row * 66, t, 26)
+        ex, ey = pixel_pill(bg, 1004 + col * 292, 138 + row * 66, t, 26)
+        if ex > W - 8 or ey > H - 8:
+            ISSUES.append("胶囊%d 超出画布: (%d,%d)" % (i, ex, ey))
 
     # ============ CRT 屏幕叠字 ============
     pixel_text(bg, (470, 690), "搭配完成", 34, (255, 130, 95),
@@ -170,13 +195,16 @@ def main():
     pixel_text(bg, (1058, 715), "开饭!", 40, (120, 30, 10), bold=True)
 
     # ============ 面板 3：左下信息区 ============
-    panel(d, [52, 1030, 830, 1152], radius=12)
-    d.text((78, 1052), "一键下单 · 把饭点安排明白",
-           font=font(30), fill=CREAM)
-    d.text((78, 1098), "github.com/JaneConan/mcd-mcp-strategist",
-           font=font(30, True), fill=GOLD)
+    bp = [52, 1030, 830, 1152]
+    panel(d, bp, radius=12)
+    s1 = "一键下单 · 把饭点安排明白"
+    d.text((78, 1052), s1, font=font(30), fill=CREAM)
+    fit("底行1", d.textbbox((78, 1052), s1, font=font(30)), bp)
+    s2 = "github.com/JaneConan/mcd-mcp-strategist"
+    d.text((78, 1098), s2, font=font(30, True), fill=GOLD)
+    fit("底行2", d.textbbox((78, 1098), s2, font=font(30, True)), bp)
 
-    # ============ 右下：二维码卡片 ============
+    # ============ 右下：二维码卡片（从简：扫码上车 + Star） ============
     try:
         import qrcode
         qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M,
@@ -192,13 +220,12 @@ def main():
                             outline=GOLD, width=3)
         bg.paste(qr_img, (card[0] + 22, card[1] + 20))
         tx = card[0] + 22 + qr_size + 24
-        d.text((tx, card[1] + 24), "扫码访问仓库", font=font(30, True), fill=INK)
-        d.text((tx, card[1] + 68), "github.com/JaneConan/", font=font(26),
-               fill=(90, 40, 40))
-        d.text((tx, card[1] + 100), "mcd-mcp-strategist", font=font(26),
-               fill=(90, 40, 40))
-        d.text((tx, card[1] + 140), "Star 一下麦门军师", font=font(26, True),
-               fill=RED)
+        f_q1, f_q2 = font(30, True), font(26, True)
+        q1, q2 = "扫码上车", "Star 麦门军师"
+        d.text((tx, 1058), q1, font=f_q1, fill=INK)
+        d.text((tx, 1104), q2, font=f_q2, fill=RED)
+        fit("QR文案1", d.textbbox((tx, 1058), q1, font=f_q1), card)
+        fit("QR文案2", d.textbbox((tx, 1104), q2, font=f_q2), card)
     except ImportError:
         print("提示: pip install qrcode 后可生成右下角二维码")
 
@@ -207,6 +234,12 @@ def main():
     for p in (OUT_PNG, OUT_JPG):
         print("%s  %.2f MB" % (p, os.path.getsize(p) / 1048576.0))
     print("size:", Image.open(OUT_PNG).size)
+    if ISSUES:
+        print("!! 溢出告警 %d 条:" % len(ISSUES))
+        for s in ISSUES:
+            print("  -", s)
+    else:
+        print("溢出检测: 全部文字均在面板内 OK")
 
 
 if __name__ == "__main__":
