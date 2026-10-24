@@ -95,12 +95,13 @@ def main():
     draw_text(d, (92, 552), "薅出神之一单——官方核价，一键下单", f_tag, WHITE,
               stroke=2, stroke_fill=(70, 0, 14))
 
-    # ---- 战绩胶囊 ----
+    # ---- 战绩胶囊（深色底 + 金字，保证可读） ----
     f_pill = font(32, bold=True)
     x = 92
     y = 640
     for t in ["实测立省 ¥24.10", "官方核价分毫不差", "113 个真实餐品", "热量预算模式"]:
-        x, _ = pill(d, x, y, t, f_pill)
+        x, _ = pill(d, x, y, t, f_pill, bg=(25, 0, 8, 175),
+                    outline=(255, 205, 43, 130), fill=GOLD)
         x += 18
 
     # ---- 左下角信息 ----
