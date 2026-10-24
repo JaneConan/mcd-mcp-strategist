@@ -32,13 +32,13 @@ def main():
     with open(SAMPLE, "r", encoding="utf-8") as f:
         data = json.load(f)
 
-    by_price, by_score, by_budget = enumerate_plans(data)
+    by_price, by_score, by_budget, by_save = enumerate_plans(data)
     if not by_price:
         print("没有找到满足约束的阵法，请放宽预算或忌口。")
         return
 
     print("🧙 麦门军师上线。需求：2 人用餐，预算 80 元（示例数据）\n")
-    for view, plans in [("最便宜", by_price), ("最性价比", by_score), ("最贴近预算", by_budget)]:
+    for view, plans in [("最便宜", by_price), ("最性价比", by_score), ("最贴近预算", by_budget), ("最大优惠", by_save)]:
         print(f"【{view}】")
         for i, p in enumerate(plans[:3], 1):
             items = " + ".join(f"{x['name']}x{x['qty']}" for x in p["items"])

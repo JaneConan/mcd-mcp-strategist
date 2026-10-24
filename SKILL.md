@@ -34,40 +34,58 @@ description: 麦门军师 MaiStrategist — 基于麦当劳 MCP 的 AI 用餐决
 
 ### 第 2 步 · 定位门店
 
-- 到店/得来速：`query-nearby-stores`（用户地址）
+- 到店/得来速：`query-nearby-stores`（beType=1 到店自提 / beType=5 得来速；searchType=2 按位置，配 city+keyword）
 - 外送：`delivery-query-addresses` 取地址 → `delivery-query-stores` 查可配送门店
 - 用户没给地址就问一句；不要猜城市。
+- ⚠️ **orderType/beType 矩阵**（实测）：到店自取 beType=1→orderType=1 **不传** beCode；
+  得来速 beType=5→orderType=1 **必传** beCode；麦乐送 beType=2→orderType=2 **必传** beCode；
+  团餐 beType=6→orderType=2 **必传** beCode。
 
 ### 第 3 步 · 拉菜单
 
-- `query-meals`：当前门店可售餐品（分类、餐品编码、价格、标签）
+- `query-meals`：返回 `data.categories`（分类→编码列表）与 `data.meals`
+  （编码→{name, currentPrice, originalPrice} 字典）。**餐品名称和真实价格在 meals 字典里**，
+  categories 中只有编码和标签。
 - 对候选套餐用 `query-meal-detail` 看组成与可替换选项（换饮料/小食往往影响价格与用券）
 
 ### 第 4 步 · 收法宝（领券）
 
 按顺序调用，一个都别省：
-1. `available-coupons` 或 `auto-bind-coupons` —— 麦麦省一键领券（先领再比，券是军师的弹药）
-2. `query-my-coupons` —— 我账户里有哪些可用券（面额、门槛、有效期）
-3. `query-store-coupons` —— 当前门店可用券
+1. `available-coupons` 或 `auto-bind-coupons` —— 麦麦省一键领券（幂等，已领会返回"暂无可领取"）
+2. `query-my-coupons` —— 我账户里有哪些券（面额、门槛、**有效期**）
+3. `query-store-coupons` —— 当前门店可用券；**券的权威适用范围以这里的
+   products[].productCode 为准**（按券名模糊匹配菜单会匹配错变体，实测差过 13.5 元）
+- ⚠️ **过滤未生效的券**：`query-my-coupons` 会把明天才生效的券也列为"可用"，
+  必须按有效期与今天比对后再入优化池。
 
 ### 第 5 步 · 排兵布阵（优化）
 
-把菜单 + 券 + 约束交给优化器：
+一键端到端（推荐，自动完成第 2–6 步）：
+
+```bash
+python3 scripts/mcp_pipeline.py --store 1980321 --budget 80 --people 2
+```
+
+或手动组装 JSON 后调优化器：
 
 ```bash
 python3 scripts/meal_optimizer.py --input <menu_coupons.json> --budget 80 --people 2 --top 3
 ```
 
-优化器在「餐品组合 × 优惠券」空间内搜索，按「实付最低 / 性价比最高 / 最贴近预算」输出候选阵法。
-菜单与券的 JSON 由你按第 3、4 步的真实返回组装（字段见 `scripts/meal_optimizer.py` 顶部注释）。
+优化器在「餐品组合 × 优惠券」空间内搜索（多阵法模板 + Beam Search + **券锚定方案**——
+每张券都确定性生成"锁定券商品+最便宜配齐"的方案，防止高价券商品被束搜索截断），
+按四个视角输出：**最便宜 / 最大优惠 / 最性价比 / 最贴近预算**。
 券不叠加时逐个试算；若实测发现可叠加，在 JSON 里标注 `stackable: true`。
 
 ### 第 6 步 · 实算校验（必须做）
 
 对最优组合调 `calculate-price`（含优惠券）向麦当劳官方核价。
-- 脚本算出价与官方价一致 → 采纳
-- 不一致 → 以官方价为准，并在输出里说明偏差原因（如配送费、包装费）
+- 脚本算出价与官方价一致 → 采纳（实测两个场景全部一致）
+- 不一致 → 以官方价为准，并在输出里说明偏差原因
 不允许跳过这步直接报数。
+⚠️ 实测行为：**`calculate-price` 不挂 couponId/couponCode 时返回全 0**，
+核价必须把券挂到对应商品上；另外**券适用商品可能不在菜单里**
+（如三件套券的 9900004002），先用一次挂券 `calculate-price` 探测官方原价再补入菜单。
 
 ### 第 7 步 · 献锦囊（输出）
 
@@ -125,7 +143,9 @@ python3 scripts/meal_optimizer.py --input <menu_coupons.json> --budget 80 --peop
 
 | 文件 | 作用 |
 |---|---|
-| `scripts/meal_optimizer.py` | 凑单/用券优化引擎（纯本地，无网络依赖） |
+| `scripts/mcp_pipeline.py` | ★ 端到端流水线：MCP 拉数→过滤→优化→官方核价，一键跑通 |
+| `scripts/meal_optimizer.py` | 凑单/用券优化引擎（束搜索+券锚定，纯本地，无网络依赖） |
 | `scripts/demo.py` | 内置样例数据的一键演示（无 MCP Token 也能跑） |
-| `tests/test_meal_optimizer.py` | 优化器单元测试 |
+| `tests/test_meal_optimizer.py` | 优化器单元测试（10 项） |
+| `docs/live-test-log.txt` | 真实 MCP 链路实测日志 |
 | `data/menu_sample.json` | 菜单/营养/券的样例数据 |

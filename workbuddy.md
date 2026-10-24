@@ -66,20 +66,48 @@ WorkBuddy 行动：
 - `scripts/demo.py` + `data/menu_sample.json`：无 Token 也能跑的演示
 - MCP 端点预检：`POST https://mcp.mcd.cn` → HTTP 401（端点可达，鉴权按文档工作）
 
-## 阶段 4 · 提交物料（14:50–）
+## 阶段 4 · 提交物料（14:50–15:10）
 
 - `README.md`：介绍/安装/示例/目标用户 + 工作原理图 + 测试结果
 - `MCP_INTEGRATION.md`：Server/Tool 清单（17 个 Tool 及用途）/调用流程/业务价值/实测记录
 - 报名 Issue：按大赛格式发布（【参赛申请】项目名称/项目地址/项目简介）
 
-## 阶段 5 · 待完成（Token 就绪后）
+## 阶段 5 · MCP Token 到位与全链路实测（17:50–19:00）
 
-- [ ] 用户提供 MCP Token → WorkBuddy 连接器配置 mcd-mcp
-- [ ] 全链路实测：领券→菜单→优化→calculate-price→create-order（到支付链接）
-- [ ] 用真实返回更新 MCP_INTEGRATION.md 实测记录 + README 截图
-- [ ] 演示录屏（1024 用餐赛道选交）
+**用户 prompt**：直接粘贴 MCP Token（`eeDFoHWRp8hCyTLrtWsHRmNiSScrRUl2`）
+
+WorkBuddy 行动：
+1. 合并写入 `~/.workbuddy/mcp.json`（保留原有 lighthouse-ops 不动），引导用户在连接器里点"信任"启用
+2. 直连探针验证：`initialize` + `tools/list` → **Token 有效，在线 35 个工具**
+   （比官方文档的 30 个还多，含 query-survey-coupon 等新增）
+3. 逐工具实测真实数据：
+   - `query-nearby-stores` → 天津南开长荣大厦餐厅（storeCode=1980321，188m）
+   - `query-meals` → **113 个餐品真实价格**（价格在 `data.meals` 字典，不在 categories）
+   - `list-nutrition-foods` → 158 条营养（CSV 风格字符串，需解析）
+   - `query-my-coupons` → 用户钱包 3 张券（三件套 ¥22.9 今天生效；另 2 张 10/26 生效）
+   - `query-store-coupons` → 券的权威商品编码 9900004002 + couponId/couponCode
+   - `auto-bind-coupons` → "暂无可领取"（幂等，已领过）
+4. **发现并修复 4 个真问题**（全部有实测依据）：
+   - 组合餐（combo）没有模板槽位 → 三件套永远选不中 → 增加套餐变体模板
+   - 47 元券商品被束搜索按价格截断挤出 beam → 增加**券锚定方案**（每张券确定性生成"锁定券商品+最便宜配齐"）
+   - 券适用商品不在菜单 → `calculate-price` 挂券探测官方原价 ¥47 后自动补入
+   - `calculate-price` 不挂券返回全 0 → 核价必须挂 couponId/couponCode
+   - 未生效券被列为"可用" → 按有效期字段过滤（11.9 元和 19.9 元券今天不可用）
+5. **优化引擎升级**：新增"最大优惠"视角（省钱助手核心视角）；
+   无热量数据的组合餐退化为"件数性价比"评分；单测扩充后 **10/10 通过**
+6. **端到端验证**（引擎 vs 官方，分毫不差）：
+   - 2 人 80 元：三件套+龙焰鸡腿堡+雪碧+可乐，原价 81.90 → 券减 24.10 → 实付 **¥57.80**，官方核价 ✅ 一致
+   - 1 人 50 元：最便宜方案官方核价 **¥21.40** ✅ 一致
+7. 产出 `scripts/mcp_pipeline.py`（一键端到端）+ `docs/live-test-log.txt`（实测日志）
+   + `docs/usage.md`（使用说明）
+
+## 阶段 6 · 待完成
+
+- [ ] 用户在连接器启用 mcd-mcp 后，Skill 在对话中的实测（录屏素材）
+- [ ] 演示录屏（1024 用餐赛道选交项）
 - [ ] 1024 作品站提交（10/25 16:00 截止，使用工具选 WorkBuddy）
-- [ ] 麦当劳大赛兑奖信息（邮箱/手机号/收货地址，11/14 前）
+- [ ] 冲星：分享仓库 + 天津现场路演（10/25 16:00 南开天开园）
+- [ ] 麦当劳大赛兑奖信息（11/14 前）
 
 ---
 

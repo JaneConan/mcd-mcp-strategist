@@ -97,6 +97,30 @@ python3 scripts/demo.py
    > "锦囊1：巨无霸×2 + 麦乐鸡(2块) + 可乐(中)×2，原价 92.5 → 实付 74.5，省 18 元，麦门长老段位！
    > 再加一包薯条(小)即可用满 59 减 18……" → 你说"下单" → 支付链接到手。
 
+## 🧪 已验证：引擎算价 = 官方算价（分毫不差）
+
+2026-10-24 在天津南开·长荣大厦餐厅（storeCode=1980321）用**真实 MCP Token** 全链路实测：
+
+```
+[数据] 菜单 113 餐品 | 营养 158 条 | 我的券 3 张 | 门店券 1 张
+[探测] 麦辣鸡腿堡三件套 不在菜单，官方原价 ¥47.00，已补入
+[用券] 今日可用 1 张: 麦辣鸡腿堡三件套（另 2 张 10/26 才生效，已自动过滤）
+[优化] 候选方案 1949 套
+
+【最大优惠】
+  1. 麦辣鸡腿堡三件套x1 + 龙焰鸡腿堡x1 + 雪碧x1 + 可乐x1
+     原价 ¥81.90 | 券减 ¥24.10 | 实付 ¥57.80
+🏆 麦门段位: 麦门长老（立省 ¥24.10，约等于多吃 1.5 个麦香鸡）
+   省钱方案官方核价: 实付 ¥57.80 ✅ 一致
+
+【最便宜】（1 人 50 元场景）
+   官方核价: 实付 ¥21.40 ✅ 一致
+```
+
+**引擎候选价与麦当劳官方 `calculate-price` 在两个场景下完全一致。**
+完整日志见 [`docs/live-test-log.txt`](./docs/live-test-log.txt)，接入细节见
+[`MCP_INTEGRATION.md`](./MCP_INTEGRATION.md)。
+
 ## 📁 目录结构
 
 ```
@@ -104,14 +128,18 @@ mcd-mcp-strategist/
 ├── SKILL.md                    # ★ Skill 主体（WorkBuddy 加载）
 ├── README.md
 ├── CONTEST_DECLARATION.md      # 参赛声明（官方模板，不可改动）
-├── MCP_INTEGRATION.md          # MCP 接入说明（Server/Tool/流程/价值）
+├── MCP_INTEGRATION.md          # MCP 接入说明（Server/Tool/流程/价值/实测记录）
 ├── mcp-config.example.json     # 脱敏 MCP 配置示例（仅环境变量占位符）
 ├── workbuddy.md                # WorkBuddy 开发对话记录
 ├── scripts/
-│   ├── meal_optimizer.py       # 凑单/用券优化引擎（束搜索，纯标准库）
+│   ├── mcp_pipeline.py         # ★ 端到端流水线（MCP 拉数→优化→官方核价）
+│   ├── meal_optimizer.py       # 凑单/用券优化引擎（束搜索+券锚定，纯标准库）
 │   └── demo.py                 # 一键演示（无需 Token）
 ├── tests/
 │   └── test_meal_optimizer.py  # 10 项单元测试
+├── docs/
+│   ├── usage.md                # 使用说明
+│   └── live-test-log.txt       # 真实 MCP 链路实测日志
 └── data/
     └── menu_sample.json        # 示例菜单/券数据（真实数据来自 MCP）
 ```

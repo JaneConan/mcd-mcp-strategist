@@ -81,11 +81,39 @@ WorkBuddy 侧配置（`连接器 → 自定义连接器 → 配置MCP`）：
    Token 与隐私信息不出现在任何输出与仓库文件中（配置文件仅环境变量占位符）。
 4. **真好玩**：麦门军师人设 + 段位称号 + 凑单提示，让算账变成薅羊毛的乐趣。
 
-## 5. 实测记录
+## 5. 实测记录（2026-10-24，天津南开·长荣大厦餐厅 storeCode=1980321）
 
-> 本节记录开发期间对 mcd-mcp 的真实调用与结果（比赛期间持续更新）。
+> 以下为开发期间对 mcd-mcp 的真实调用与结果，完整日志见 `docs/live-test-log.txt`。
 
-| 时间 | 调用 | 结果 |
+| 顺序 | 调用 | 关键结果 |
 |---|---|---|
-| 2026-10-24 | `POST https://mcp.mcd.cn`（占位 Token） | HTTP 401 —— 端点可达，鉴权按文档工作 |
-| … | （待 Token 就绪后补充完整链路记录） | … |
+| 1 | `now-time-info` | 服务器时间 2026-10-24 17:48:43（Token 有效） |
+| 2 | `tools/list` | **在线 35 个工具**（官方文档列 30 个，另有 query-survey-coupon 等新增） |
+| 3 | `campaign-calendar` | 返回 10 月活动日历（PEACEMINUSONE 联名周边、「我就喜欢」丝巾等，含进行中/往期/未来） |
+| 4 | `list-nutrition-foods` | 158 条餐品营养（能量 kJ/kcal、蛋白质、脂肪、碳水、钠、钙） |
+| 5 | `query-nearby-stores` (beType=1, searchType=2, city=天津, keyword=南开大悦城) | 长荣大厦餐厅（188m）、三马路福邻荟餐厅（581m）等，含营业时间与预约时段 |
+| 6 | `query-meals` (storeCode, orderType=1, beType=1) | **113 个餐品**（15 个分类，`data.meals` 字典含 currentPrice/originalPrice） |
+| 7 | `query-my-coupons` | 用户钱包 3 张券：麦辣鸡腿堡三件套 ¥22.9（10/23 生效）、11.9 元麦辣鸡腿堡与 19.9 元王牌炸鸡任选 2（10/26 生效） |
+| 8 | `query-store-coupons` | 门店券权威视图：三件套券 couponId=B7A9CFE8…、couponCode=MCD6204QY…、适用商品编码 **9900004002** |
+| 9 | `auto-bind-coupons` | "暂无可领取"（麦麦省券均已领取，幂等安全） |
+| 10 | `calculate-price`（探测） | 三件套商品 9900004002 **不在菜单中**，官方核价得出原价 ¥47.00 → 流水线自动补入菜单 |
+| 11 | `calculate-price`（核价·最便宜方案） | 龙焰鸡腿堡+雪碧×2+蘸酱炸鸡：引擎 ¥46.80 = 官方 ¥46.80 ✅ |
+| 12 | `calculate-price`（核价·省钱方案） | 三件套+龙焰鸡腿堡+雪碧+可乐：引擎 ¥57.80 = 官方 ¥57.80 ✅ |
+
+### 实测中发现的 API 行为（已写进 Skill 工作流）
+
+1. **`query-meals` 只返回编码+标签**，餐品名称与价格在响应的 `data.meals` 字典里（按 code 索引）；
+2. **`calculate-price` 不挂券时返回全 0**——官方价格必须挂在券上才算得出来，裸跑无意义；
+3. **券的权威适用范围以 `query-store-coupons` 的 `products[].productCode` 为准**，
+   按券名模糊匹配菜单会匹配错变体（三件套券实际适用 9900004002，原价 47，
+   而菜单里 9900005456 是另一个 33.5 的变体——差 13.5 元）；
+4. **`orderType`/`beType` 传递矩阵**：到店自取 beType=1→orderType=1 不传 beCode；
+   得来速 beType=5→orderType=1 必传 beCode；麦乐送 beType=2→orderType=2 必传 beCode；团餐 beType=6→orderType=2；
+5. **券有生效日期**：`query-my-coupons` 把未生效的券也列为"可用"，流水线按 `有效期` 字段过滤；
+6. **菜单中可能缺少券适用商品**：用 `calculate-price` 挂券探测官方原价后补入（探测一次，幂等）。
+
+### 端到端验证结论
+
+引擎候选价格与麦当劳官方 `calculate-price` **在两个测试场景下完全一致**
+（¥46.80 / ¥57.80），证明"本地优化 + 官方核价"架构可靠；引擎只生成候选，
+一切以官方返回为准的设计在实测中成立。

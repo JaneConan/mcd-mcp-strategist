@@ -38,6 +38,9 @@ coupon.type 取值:
   threshold  满 threshold 减 value（scope=all 全场，或分类/编码列表）
   percent    全场/分类折扣，value 为折扣率(0.85 = 85折)
   item       单品券，scope 为餐品编码列表，value 为立减金额或 {"price": 新价}
+  fixed_bundle 固定价任选券，scope 为适用餐品编码列表，
+             value={"price": 任选总价, "count": 需选件数}
+             （例: 19.9元王牌炸鸡任选2 → price=19.9, count=2）
   delivery   免配送费，value 为配送费减免额
 
 输出 JSON: {"plans": [...], "suggestion": {...}, "stats": {...}}
@@ -54,18 +57,33 @@ CAT_TOP_N = 12            # 每个分类最多参与搜索的单品数（按价�
 
 # ---------------------------------------------------------------- 模板
 def build_templates(people):
-    """按人数生成阵法模板: [ {分类: 件数}, ... ]"""
+    """按人数生成阵法模板: [ {分类: 件数}, ... ]
+    每个基础模板再派生一个「套餐变体」(combo 槽位替换一个 main 槽位)，
+    让套餐类餐品(如三件套)能进入搜索空间。"""
     P = people
-    templates = [
-        {"main": P, "side": P, "drink": P},                    # 饱腹型
-        {"main": P, "drink": P},                               # 简约型
-        {"main": P, "side": 1, "drink": P},                    # 轻食型
-        {"main": P + 1, "side": P + 1, "drink": P, "dessert": 1},   # 丰盛型
+    bases = [
+        {"main": P, "side": P, "drink": P},                                    # 饱腹型
+        {"main": P, "drink": P},                                               # 简约型
+        {"main": P, "side": 1, "drink": P},                                    # 轻食型
+        {"main": P + 1, "side": P + 1, "drink": P, "dessert": 1},              # 丰盛型
     ]
     if P >= 2:
-        templates.append({"main": P, "side": P + 1, "drink": P + 1, "dessert": 1})  # 分享型
+        bases.append({"main": P, "side": P + 1, "drink": P + 1, "dessert": 1})  # 分享型
     if P >= 3:
-        templates.append({"main": P + 1, "side": P + 1, "drink": P + 1, "dessert": 1})  # 团圆型
+        bases.append({"main": P + 1, "side": P + 1, "drink": P + 1, "dessert": 1})  # 团圆型
+
+    templates = []
+    for t in bases:
+        templates.append(dict(t))
+        # 套餐变体: 用 1 个 combo 槽替换 1 个 main 槽
+        variant = dict(t)
+        if variant.get("main", 0) >= 1:
+            variant["main"] = variant["main"] - 1
+            variant["combo"] = variant.get("combo", 0) + 1
+            templates.append(variant)
+        else:
+            variant["combo"] = variant.get("combo", 0) + 1
+            templates.append(variant)
     return templates
 
 
@@ -100,6 +118,23 @@ def applicable_coupons(coupons, items, delivery_fee):
                         disc += c["value"] * i["qty"]
             if disc > 0:
                 out.append((c, 0.0, disc))
+        elif ctype == "fixed_bundle":
+            # 固定价任选券: scope 为适用餐品编码, value={"price": 总价, "count": 需选件数}
+            # 例: 19.9元王牌炸鸡任选2 -> 订单内含>=2件 scope 商品时,
+            # 减免 = (scope 内最便宜的 count 件原价合计) - price
+            codes = scope if isinstance(scope, list) else [scope]
+            need = int(c.get("value", {}).get("count", 2))
+            target = c.get("value", {}).get("price")
+            if target is None:
+                continue
+            pool = []
+            for i in items:
+                if i["code"] in codes:
+                    pool.extend([i["price"]] * i["qty"])
+            if len(pool) >= need:
+                disc = sum(sorted(pool)[:need]) - target
+                if disc > 0:
+                    out.append((c, 0.0, round(disc, 2)))
         elif ctype == "delivery":
             if delivery_fee > 0:
                 out.append((c, 0.0, min(c["value"], delivery_fee)))
@@ -139,6 +174,78 @@ def _merge(chosen):
         else:
             merged[it["code"]] = dict(it, qty=it.get("qty", 1))
     return list(merged.values())
+
+
+def _make_plan(chosen, ctx):
+    """把一组槽位选择评估成完整方案（含用券），不满足约束返回 None。"""
+    budget = ctx["budget"]
+    items = _merge(chosen)
+    kcal = sum(i.get("kcal", 0) * i["qty"] for i in items)
+    if ctx["max_kcal"] and kcal > ctx["max_kcal"]:
+        return None
+    if ctx["must_have"] and not ctx["must_have"].issubset({i["code"] for i in items}):
+        return None
+    base = round(sum(i["price"] * i["qty"] for i in items), 2)
+    if budget and base > budget * 1.5:
+        return None
+    chosen_c, disc = best_coupon_combo(ctx["coupons"], items, ctx["delivery_fee"], ctx["stacking"])
+    final = round(max(0.0, base - disc) + ctx["delivery_fee"], 2)
+    if budget and final > budget:
+        return None
+    return {
+        "items": items,
+        "base_price": base,
+        "delivery_fee": ctx["delivery_fee"],
+        "coupons": [
+            {"id": c["id"], "name": c["name"], "type": c["type"]} for c in chosen_c
+        ],
+        "discount": disc,
+        "final_price": final,
+        "total_kcal": kcal,
+    }
+
+
+def anchored_plans(template, ctx, coupon):
+    """
+    券锚定方案: 束搜索按价格截断可能把高价券商品挤出 beam,
+    这里对每张单品/任选券确定性地生成「锁定券商品 + 最便宜配齐」的方案,
+    保证用券方案一定进入候选池。生成 2 个变体(纯省钱/略升级)。
+    """
+    ctype = coupon.get("type")
+    scope = coupon.get("scope")
+    if ctype not in ("item", "fixed_bundle") or not isinstance(scope, list) or not scope:
+        return []
+    if ctype == "item":
+        anchors = scope[:1]
+    else:
+        n = int(coupon.get("value", {}).get("count", 2))
+        anchors = scope[:n]
+    anchor_items = [ctx["item_by_code"][c] for c in anchors if c in ctx["item_by_code"]]
+    if not anchor_items:
+        return []
+    used = {}
+    for it in anchor_items:
+        used[it["category"]] = used.get(it["category"], 0) + 1
+    remaining = {}
+    for cat, n in template.items():
+        left = n - used.get(cat, 0)
+        if left > 0:
+            remaining[cat] = left
+
+    plans = []
+    for variant in (0, 1):  # 0=每槽最便宜, 1=部分槽往贵选一档
+        chosen = [dict(it, qty=1) for it in anchor_items]
+        for cat, n in remaining.items():
+            cands = ctx["cand_by_cat"].get(cat, [])
+            if not cands:
+                continue
+            for k in range(n):
+                idx = min(k + variant, len(cands) - 1)
+                chosen.append(dict(cands[idx]))
+        p = _make_plan(chosen, ctx)
+        if p:
+            plans.append(p)
+    return plans
 
 
 def beam_search(template, ctx, objective, beam_width=BEAM_WIDTH):
@@ -204,27 +311,9 @@ def beam_search(template, ctx, objective, beam_width=BEAM_WIDTH):
     # 生成完整方案
     plans = []
     for chosen, base in beam:
-        items = _merge(chosen)
-        kcal = sum(i.get("kcal", 0) * i["qty"] for i in items)
-        if ctx["max_kcal"] and kcal > ctx["max_kcal"]:
-            continue
-        chosen_c, disc = best_coupon_combo(
-            ctx["coupons"], items, ctx["delivery_fee"], ctx["stacking"]
-        )
-        final = round(max(0.0, base - disc) + ctx["delivery_fee"], 2)
-        if budget and final > budget:
-            continue
-        plans.append({
-            "items": items,
-            "base_price": round(base, 2),
-            "delivery_fee": ctx["delivery_fee"],
-            "coupons": [
-                {"id": c["id"], "name": c["name"], "type": c["type"]} for c in chosen_c
-            ],
-            "discount": disc,
-            "final_price": final,
-            "total_kcal": kcal,
-        })
+        p = _make_plan(chosen, ctx)
+        if p:
+            plans.append(p)
     return plans
 
 
@@ -254,12 +343,16 @@ def _objective_key(state, objective, budget):
 def plan_score(plan, budget):
     if plan["final_price"] <= 0:
         return 0.0
-    kcal_per_yuan = plan["total_kcal"] / plan["final_price"]
     cats = len({i["category"] for i in plan["items"]})
     n_items = sum(i["qty"] for i in plan["items"])
     closeness = 1.0 - abs(plan["final_price"] - budget) / max(budget, 1.0) if budget else 0.0
+    if plan["total_kcal"] > 0:
+        term1 = 0.45 * min(plan["total_kcal"] / plan["final_price"] / 30.0, 1.0)
+    else:
+        # 无热量数据(如券探测补入的组合餐): 退化为「件数性价比」评分
+        term1 = 0.30 * min(n_items / plan["final_price"] / 0.08, 1.0)
     return round(
-        0.45 * min(kcal_per_yuan / 30.0, 1.0)
+        term1
         + 0.25 * (cats / 4.0)
         + 0.20 * min(n_items / 8.0, 1.0)
         + 0.10 * max(closeness, 0.0),
@@ -283,14 +376,21 @@ def enumerate_plans(data):
     for cat in by_cat:
         by_cat[cat].sort(key=lambda x: (x["price"], -x.get("kcal", 0)))
 
-    # 每分类取 Top-N（必吃品强制入池）
+    # 每分类取 Top-N（必吃品 + 券适用商品强制入池——否则高价券商品会被价格截断挡在门外）
+    coupon_codes = set()
+    for c in data.get("coupons", []):
+        scope = c.get("scope", "all")
+        if isinstance(scope, list):
+            coupon_codes.update(scope)
+    force_in = must_have | coupon_codes
     cand_by_cat = {}
     for cat, lst in by_cat.items():
         picked = lst[:CAT_TOP_N]
         codes = {i["code"] for i in picked}
         for it in lst:
-            if it["code"] in must_have and it["code"] not in codes:
+            if it["code"] in force_in and it["code"] not in codes:
                 picked.append(it)
+                codes.add(it["code"])
         cand_by_cat[cat] = picked
 
     ctx = {
@@ -310,6 +410,9 @@ def enumerate_plans(data):
     for template in build_templates(people):
         for objective in ("cheapest", "value", "closest"):
             all_plans.extend(beam_search(template, ctx, objective))
+        # 券锚定方案（保证用券方案进入候选池）
+        for coupon in ctx["coupons"]:
+            all_plans.extend(anchored_plans(template, ctx, coupon))
 
     # 去重（同组商品只保留最优惠方案）
     best_by_key = {}
@@ -327,7 +430,9 @@ def enumerate_plans(data):
         plans,
         key=lambda p: (abs(p["final_price"] - budget) if budget else 0, p["final_price"]),
     )
-    return by_price, by_score, by_budget
+    # 最大优惠视角: 省钱助手的核心视角——券减最多, 并列时实付更低者胜
+    by_save = sorted(plans, key=lambda p: (-p["discount"], p["final_price"], -p["total_kcal"]))
+    return by_price, by_score, by_budget, by_save
 
 
 # ---------------------------------------------------------------- 凑单提示
